@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+    environment:
+      - DB_HOST=db
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_NAME=social_network
+      - DB_PORT=5432
+    networks:
+      - social_network
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=social_network
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - social_network
+
+  migrate:
+    image: golang:1.21-alpine
+    working_dir: /app
+    volumes:
+      - .:/app
+    depends_on:
+      - db
+    command: >
+      sh -c "go install github.com/pressly/goose/v3/cmd/goose@latest &&
+             goose -dir migrations postgres 'postgres://postgres:postgres@db:5432/social_network?sslmode=disable' up"
+    networks:
+      - social_network
+
+networks:
+  social_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
