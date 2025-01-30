@@ -1,6 +1,8 @@
 package main
 
 import (
+	"database/sql"
+	"fmt"
 	"log"
 	"net/http"
 
@@ -14,37 +16,28 @@ import (
 )
 
 func main() {
-	// Инициализация конфига
 	cfg := config.NewConfig()
 
-	// Инициализация БД
-	db, err := postgres.NewPostgresDB(postgres.Config{
-		Host:     cfg.DBHost,
-		Port:     cfg.DBPort,
-		Username: cfg.DBUser,
-		Password: cfg.DBPassword,
-		DBName:   cfg.DBName,
-		SSLMode:  "disable",
-	})
+	dsn := fmt.Sprintf(
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+		cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPassword, cfg.DBName,
+	)
+
+	db, err := sql.Open("postgres", dsn)
 	if err != nil {
-		log.Fatal("Failed to initialize db: ", err)
+		log.Fatalf("Could not connect to database: %v", err)
 	}
 	defer db.Close()
 
-	// Инициализация репозиториев
 	repos := postgres.NewRepositories(db)
 
-	// Инициализация сервисов
 	services := service.NewServices(repos)
 
-	// Инициализация хендлеров
 	handlers := handler.NewHandler(services)
 
-	// Создание роутера и регистрация обработчиков
 	router := mux.NewRouter()
 	handlers.Register(router)
 
-	// Запуск сервера
 	log.Printf("Server starting on port %s", cfg.ServerPort)
 	if err := http.ListenAndServe(":"+cfg.ServerPort, router); err != nil {
 		log.Fatal(err)

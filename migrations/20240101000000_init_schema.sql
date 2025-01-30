@@ -1,4 +1,8 @@
 -- +goose Up
+
+-- Дополнение для паролей
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 -- Создаем enum для ролей пользователей
 CREATE TYPE user_role AS ENUM ('user', 'moderator', 'admin');
 
@@ -6,7 +10,6 @@ CREATE TYPE user_role AS ENUM ('user', 'moderator', 'admin');
 CREATE TABLE users (
     id SERIAL PRIMARY KEY,
     username VARCHAR(50) UNIQUE NOT NULL,
-    email VARCHAR(255) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     role user_role DEFAULT 'user',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -16,7 +19,7 @@ CREATE TABLE users (
 -- Таблица постов
 CREATE TABLE posts (
     id SERIAL PRIMARY KEY,
-    author_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    author_id INTEGER REFERENCES users(id),
     content TEXT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -58,3 +61,4 @@ DROP TABLE IF EXISTS hashtags;
 DROP TABLE IF EXISTS posts;
 DROP TABLE IF EXISTS users;
 DROP TYPE IF EXISTS user_role;
+DROP EXTENSION IF EXISTS pgcrypto;

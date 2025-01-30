@@ -29,10 +29,35 @@ const (
         WHERE p.author_id = $1
         GROUP BY p.id, u.id`
 
+	baseUserPostsQueryHashtag = `
+		SELECT p.id, p.author_id, p.content, p.created_at, p.updated_at,
+			u.username, u.role,
+			ARRAY_AGG(h.name) FILTER (WHERE h.name IS NOT NULL) as hashtags
+		FROM posts p
+		JOIN users u ON p.author_id = u.id
+		LEFT JOIN post_hashtags ph ON p.id = ph.post_id
+		LEFT JOIN hashtags h ON ph.hashtag_id = h.id
+		WHERE p.author_id = $1
+		GROUP BY p.id, u.id
+		HAVING $4::varchar IS NULL OR $4 = ANY(ARRAY_AGG(h.name) FILTER (WHERE h.name IS NOT NULL))`
+
 	baseFeedPostsQuery = basePostSelect + `
         JOIN followers f ON p.author_id = f.following_id
         WHERE f.follower_id = $1
         GROUP BY p.id, u.id`
+
+	baseFeedPostsQueryHashtag = `
+		SELECT p.id, p.author_id, p.content, p.created_at, p.updated_at,
+			u.username, u.role,
+			ARRAY_AGG(h.name) FILTER (WHERE h.name IS NOT NULL) as hashtags
+		FROM posts p
+		JOIN users u ON p.author_id = u.id
+		LEFT JOIN post_hashtags ph ON p.id = ph.post_id
+		LEFT JOIN hashtags h ON ph.hashtag_id = h.id
+		JOIN followers f ON p.author_id = f.following_id
+		WHERE f.follower_id = $1
+		GROUP BY p.id, u.id
+		HAVING $4::varchar IS NULL OR $4 = ANY(ARRAY_AGG(h.name) FILTER (WHERE h.name IS NOT NULL))`
 
 	baseHashtagPostsQuery = basePostSelect + `
         WHERE h.name = $1
@@ -123,15 +148,23 @@ func (r *PostRepository) GetByID(postID int) (*models.Post, error) {
 	return post, nil
 }
 
-func (r *PostRepository) GetUserPosts(userID int, page, perPage int, orderDesc bool) ([]models.Post, error) {
+func (r *PostRepository) GetUserPosts(userID int, page, perPage int, orderDesc bool, hashtag *string) ([]models.Post, error) {
 	if err := validatePagination(page, perPage); err != nil {
 		return nil, err
 	}
 
-	query := buildPaginatedQuery(baseUserPostsQuery, orderDesc)
 	offset := (page - 1) * perPage
 
-	rows, err := r.db.Query(query, userID, perPage, offset)
+	var rows *sql.Rows
+	var err error
+	if hashtag == nil {
+		query := buildPaginatedQuery(baseUserPostsQuery, orderDesc)
+		rows, err = r.db.Query(query, userID, perPage, offset)
+	} else {
+		query := buildPaginatedQuery(baseUserPostsQueryHashtag, orderDesc)
+		rows, err = r.db.Query(query, userID, perPage, offset, hashtag)
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("query posts: %w", err)
 	}
@@ -140,15 +173,23 @@ func (r *PostRepository) GetUserPosts(userID int, page, perPage int, orderDesc b
 	return r.scanPosts(rows)
 }
 
-func (r *PostRepository) GetFeedPosts(userID int, page, perPage int, orderDesc bool) ([]models.Post, error) {
+func (r *PostRepository) GetFeedPosts(userID int, page, perPage int, orderDesc bool, hashtag *string) ([]models.Post, error) {
 	if err := validatePagination(page, perPage); err != nil {
 		return nil, err
 	}
 
-	query := buildPaginatedQuery(baseFeedPostsQuery, orderDesc)
 	offset := (page - 1) * perPage
 
-	rows, err := r.db.Query(query, userID, perPage, offset)
+	var rows *sql.Rows
+	var err error
+	if hashtag == nil {
+		query := buildPaginatedQuery(baseFeedPostsQuery, orderDesc)
+		rows, err = r.db.Query(query, userID, perPage, offset)
+	} else {
+		query := buildPaginatedQuery(baseFeedPostsQueryHashtag, orderDesc)
+		rows, err = r.db.Query(query, userID, perPage, offset, hashtag)
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("query feed: %w", err)
 	}
@@ -205,7 +246,6 @@ func (r *PostRepository) Delete(postID int) error {
 	return nil
 }
 
-// Вспомогательные методы
 func (r *PostRepository) handleHashtags(tx *sql.Tx, postID int, hashtags []string) error {
 	if len(hashtags) == 0 {
 		return nil

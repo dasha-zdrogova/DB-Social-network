@@ -3,15 +3,21 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"social-network/internal/repository/postgres"
-	"social-network/internal/service"
-	"social-network/internal/models"
 )
 
-type loginRequest struct {
+type userIDKey struct{}
+
+type registerRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
+}
+
+type loginRequest struct {
+	Username string `json:"username" validate:"required"`
+	Password string `json:"password" validate:"required"`
 }
 
 type authResponse struct {
@@ -32,19 +38,18 @@ func (h *Handler) authMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		ctx := context.WithValue(r.Context(), "userID", userID)
+		ctx := context.WithValue(r.Context(), userIDKey{}, userID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
 func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
-	var req models.RegisterRequest
+	var req registerRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	// Validate input
 	if len(req.Username) < 3 || len(req.Password) < 6 {
 		http.Error(w, "username or password too short", http.StatusBadRequest)
 		return
@@ -55,7 +60,7 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "username already taken", http.StatusConflict)
 			return
 		}
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -69,10 +74,9 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate credentials
 	user, err := h.services.Users.ValidateUser(req.Username, req.Password)
 	if err != nil {
-		if err == service.ErrInvalidCredentials {
+		if err == postgres.ErrUserNotFound {
 			http.Error(w, "invalid credentials", http.StatusUnauthorized)
 			return
 		}
@@ -80,15 +84,20 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate and store token
 	token := h.tokenManager.GenerateToken()
 	h.tokenManager.AddToken(token, user.ID)
 
-	// Set response headers
 	w.Header().Set("Content-Type", "application/json")
 
-	// Return response
 	json.NewEncoder(w).Encode(authResponse{
 		Token: token,
 	})
+}
+
+func (*Handler) getUserIDFromContext(r *http.Request) (int, error) {
+	userID, ok := r.Context().Value(userIDKey{}).(int)
+	if !ok {
+		return 0, errors.New("no user id in context")
+	}
+	return userID, nil
 }

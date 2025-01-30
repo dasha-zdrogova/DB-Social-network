@@ -45,7 +45,6 @@ func (tm *TokenManager) ValidateToken(token string) (int, error) {
 
 	}
 
-	// Extend token lifetime
 	data.ExpiresAt = time.Now().Add(30 * time.Minute)
 	tm.mu.Lock()
 	tm.tokens[token] = data
@@ -77,4 +76,10 @@ func (*TokenManager) GenerateToken() string {
 	b := make([]byte, 32)
 	rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+func (tm *TokenManager) RemoveToken(token string) {
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	delete(tm.tokens, token)
 }

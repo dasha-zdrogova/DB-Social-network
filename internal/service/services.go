@@ -11,7 +11,7 @@ type Services struct {
 func NewServices(repos *postgres.Repositories) *Services {
 	return &Services{
 		Users:   NewUserService(repos.Users),
-		Posts:   NewPostService(repos.Posts),
+		Posts:   NewPostService(repos),
 		Follows: NewFollowService(repos.Follows),
 	}
 }
